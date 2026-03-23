@@ -62,6 +62,10 @@
     .jbtn.gold:hover { background:var(--gold-light); }
     .mode-btn { margin-left:auto; }
 
+    .save-toast { display:none; font-family:var(--font-t); font-size:10px; color:var(--muted); letter-spacing:0.1em; align-items:center; gap:5px; margin-bottom:8px; }
+    .save-toast.show { display:flex; }
+    .save-dot { width:7px; height:7px; border-radius:50%; background:var(--gold); }
+
     .grid-outer { border:3px solid var(--border-strong); border-radius:3px; overflow:hidden; box-shadow:4px 4px 0 var(--border-strong); }
     .grid-wrap { overflow-x:auto; }
     table { width:100%; border-collapse:collapse; min-width:580px; }
@@ -141,6 +145,11 @@
     <button class="jbtn mode-btn" id="mode-btn" onclick="toggleMode()">☽ Night</button>
   </div>
 
+  <div class="save-toast" id="save-toast">
+    <div class="save-dot"></div>
+    <span id="save-msg">Plan saved</span>
+  </div>
+
   <div class="copy-banner" id="copy-banner">
     <span id="copy-banner-text"></span>
     <button class="copy-banner-cancel" onclick="cancelCopy()">✕ Cancel</button>
@@ -176,8 +185,13 @@
   const HOURS = [];
   for (let h = 6; h <= 23; h++) HOURS.push(h);
 
+  const STORAGE_TASKS = 'jazzplanner_tasks';
+  const STORAGE_CATS  = 'jazzplanner_cats';
+  const STORAGE_MODE  = 'jazzplanner_mode';
+
   let isNight = false;
   let copySource = null;
+  let toastTimer = null;
   let categories = [
     { name: 'Performance', color: '#9e3d1f' },
     { name: 'Rehearsal',   color: '#1a6b6b' },
@@ -187,10 +201,45 @@
   let tasks = {};
   let pendingCell = null;
 
+  function persist() {
+    try {
+      localStorage.setItem(STORAGE_TASKS, JSON.stringify(tasks));
+      localStorage.setItem(STORAGE_CATS, JSON.stringify(categories));
+      localStorage.setItem(STORAGE_MODE, isNight ? 'night' : 'day');
+      showToast('Plan saved');
+    } catch(e) {
+      showToast('Could not save — storage full?');
+    }
+  }
+
+  function loadFromStorage() {
+    try {
+      const t = localStorage.getItem(STORAGE_TASKS);
+      const c = localStorage.getItem(STORAGE_CATS);
+      const m = localStorage.getItem(STORAGE_MODE);
+      if (t) tasks = JSON.parse(t);
+      if (c) categories = JSON.parse(c);
+      if (m === 'night') {
+        isNight = true;
+        document.getElementById('jroot').classList.add('night');
+        document.getElementById('mode-btn').innerHTML = '☀ Day';
+      }
+    } catch(e) {}
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('save-toast');
+    document.getElementById('save-msg').textContent = msg;
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
   function toggleMode() {
     isNight = !isNight;
     document.getElementById('jroot').classList.toggle('night', isNight);
     document.getElementById('mode-btn').innerHTML = isNight ? '☀ Day' : '☽ Night';
+    persist();
   }
 
   function cellKey(d, h) { return `${d}-${h}`; }
@@ -220,6 +269,7 @@
       if (!tasks[dk]) {
         tasks[dk] = { ...tasks[cellKey(copySource.day, copySource.hour)] };
         cancelCopy();
+        persist();
       }
       return;
     }
@@ -284,6 +334,7 @@
     document.getElementById('new-cat').value = '';
     updateCatSelects();
     buildLegend();
+    persist();
   }
 
   function openAdd(day, hour) {
@@ -328,12 +379,14 @@
     tasks[cellKey(pendingCell.day, pendingCell.hour)] = { name, cat: cat || (categories[0] || { name: '' }).name };
     closeModal();
     buildTable();
+    persist();
   }
 
   function deleteTask(day, hour) {
     if (copySource && copySource.day === day && copySource.hour === hour) cancelCopy();
     delete tasks[cellKey(day, hour)];
     buildTable();
+    persist();
   }
 
   let dragSrc = null;
@@ -349,10 +402,16 @@
     if (t) { if (tasks[dk]) tasks[sk] = tasks[dk]; else delete tasks[sk]; tasks[dk] = t; }
     dragSrc = null;
     buildTable();
+    persist();
   }
 
   function clearAll() {
-    if (confirm('Clear all tasks from the planner?')) { tasks = {}; cancelCopy(); buildTable(); }
+    if (confirm('Clear all tasks from the planner?')) {
+      tasks = {};
+      cancelCopy();
+      buildTable();
+      persist();
+    }
   }
 
   document.addEventListener('keydown', e => {
@@ -360,6 +419,7 @@
   });
   document.getElementById('task-name').addEventListener('keydown', e => { if (e.key === 'Enter') saveTask(); });
 
+  loadFromStorage();
   updateCatSelects();
   buildTable();
 </script>
